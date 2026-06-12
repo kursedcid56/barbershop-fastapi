@@ -4,6 +4,7 @@ from fastapi import FastAPI, Response, status, HTTPException, Depends, APIRouter
 from ..database import  SessionLocal, get_db
 from sqlalchemy.orm import Session
 from typing import List
+import ollama
 router = APIRouter(
     prefix="/services",
     tags=['Service']
@@ -58,7 +59,40 @@ def delete_service(id: int,db: Session = Depends(get_db),
     deleted_service.delete(synchronize_session = False)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
- 
+
+@router.post("/consult", response_model=schemas.ConsultOut)
+def consult_haircut(
+    input_data:schemas.ConsultRequest,
+    db:Session = Depends(get_db)):
+    service_in_db = db.query(models.Service).all()
+
+    menu_text = ""
+    for service in service_in_db:
+        menu_text += f"Gói:{service.name} | Giá:{service.price}đ | Thời gian:{service.duration_minutes} phút. \n"
+    prompt = f"""
+    Mày là một anh thợ cắt tóc Barber có 10 năm kinh nghiệm, cực kỳ sành điệu và thân thiện.
+    Hãy xưng hô với khách là 'bro' hoặc 'anh' và gọi mình là 'em' hoặc 'tiệm'.
+
+    Đây là danh sách các gói dịch vụ ĐANG CÓ THỰC TẾ tại tiệm của em:
+    {menu_text}
+
+    Khách hàng bước vào tiệm và hỏi câu này: "{input_data.question}"
+
+    Nhiệm vụ của mày:
+    1. Dựa vào danh sách dịch vụ trên, hãy tư vấn và gợi ý cho khách gói dịch vụ phù hợp nhất với câu hỏi của họ.
+    2. Tuyệt đối KHÔNG ĐƯỢC tự bịa ra dịch vụ nào khác ngoài danh sách trên.
+    3. Trả lời ngắn gọn, chất chơi, thuyết phục khách chốt lịch.
+    """    
+    try:
+        response = ollama.generate(model="llama3.2:1b", prompt=prompt)
+        AI_advice = response.get("response", "")
+        return {"advice":{AI_advice}}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi hệ thống: {str(e)}"
+
+        )
 
 
 
